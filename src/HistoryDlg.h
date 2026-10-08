@@ -23,21 +23,29 @@ protected:
     CFont m_smallFont;
 };
 
+// 사용 기록 화면. 기록은 서비스에서 받아온다.
 class CHistoryDlg : public CDialog {
 public:
-    // records: 날짜별 기록 (순서 무관), dailyLimitMs: 하루 제한 (-1 이면 표시 안 함)
-    CHistoryDlg(std::vector<UsageRecord> records, int64_t dailyLimitMs, CWnd* pParent = nullptr);
+    explicit CHistoryDlg(CWnd* pParent = nullptr);
     enum { IDD = IDD_HISTORY };
 
-    // 파일의 기록에 실행 중인 앱의 오늘 값을 덮어써 보여 준다 (live 가 nullptr 이면 파일 값만).
-    static void Show(const cb::ScheduleConfig& cfg, const UsageRecord* live, CWnd* pParent = nullptr);
+    static void Show(CWnd* pParent = nullptr);
 
 protected:
     virtual void DoDataExchange(CDataExchange* pDX);
     virtual BOOL OnInitDialog();
+    afx_msg void OnUserChanged();
+    DECLARE_MESSAGE_MAP()
 
+    bool Load(const CString& user);
+    void Populate();
+
+    CString m_user;
+    std::vector<CString> m_children;
     std::vector<UsageRecord> m_records;
-    int64_t m_limitMs;
+    int64_t m_limitMs = -1;
+
     CUsageChart m_chart;
     CListCtrl m_list;
+    CComboBox m_userCombo;
 };

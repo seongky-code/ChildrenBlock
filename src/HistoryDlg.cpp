@@ -2,6 +2,8 @@
 #include "HistoryDlg.h"
 
 #include "Common.h"
+#include "Protocol.h"
+#include "UiUtil.h"
 
 #include <algorithm>
 #include <map>
@@ -143,32 +145,86 @@ void CUsageChart::OnPaint() {
 // ---------------------------------------------------------------------------
 // CHistoryDlg
 
-CHistoryDlg::CHistoryDlg(std::vector<UsageRecord> records, int64_t dailyLimitMs, CWnd* pParent)
-    : CDialog(IDD_HISTORY, pParent), m_records(std::move(records)), m_limitMs(dailyLimitMs) {}
+BEGIN_MESSAGE_MAP(CHistoryDlg, CDialog)
+    ON_CBN_SELCHANGE(IDC_HISTORY_USER, &CHistoryDlg::OnUserChanged)
+END_MESSAGE_MAP()
 
-void CHistoryDlg::Show(const cb::ScheduleConfig& cfg, const UsageRecord* live, CWnd* pParent) {
-    std::vector<UsageRecord> records = SettingsStore::LoadHistory();
-    if (live) {
-        auto it = std::find_if(records.begin(), records.end(),
-                               [live](const UsageRecord& r) { return r.date == live->date; });
-        if (it != records.end())
-            *it = *live;
-        else
-            records.push_back(*live);
+CHistoryDlg::CHistoryDlg(CWnd* pParent) : CDialog(IDD_HISTORY, pParent) {}
+
+void CHistoryDlg::Show(CWnd* pParent) {
+    CHistoryDlg dlg(pParent);
+    if (!dlg.Load(_T(""))) {
+        ShowMessage(pParent, _T("ChildrenBlock 서비스에 연결할 수 없습니다."), MB_ICONERROR);
+        return;
     }
-    const int64_t limit = cfg.dailyLimitEnabled ? static_cast<int64_t>(cfg.dailyLimitMinutes) * 60 * 1000 : -1;
-    CHistoryDlg dlg(std::move(records), limit, pParent);
     dlg.DoModal();
+}
+
+bool CHistoryDlg::Load(const CString& user) {
+    proto::Message req(proto::kHistory);
+    if (!user.IsEmpty()) req.Set(_T("user"), user);
+    proto::Message resp;
+    if (!proto::Transact(req, resp, 10000) || !resp.IsOk()) return false;
+
+    m_user = resp.Get(_T("user"));
+    m_children = resp.GetAll(_T("child"));
+    const cb::ScheduleConfig cfg = proto::ConfigFromMessage(resp);
+    m_limitMs = cfg.dailyLimitEnabled ? static_cast<int64_t>(cfg.dailyLimitMinutes) * 60 * 1000 : -1;
+
+    m_records.clear();
+    for (const CString& line : resp.GetAll(_T("h"))) {
+        UsageRecord r;
+        int pos = 0;
+        r.date = _ttoi(line.Tokenize(_T(","), pos));
+        r.usedMs = _tcstoi64(line.Tokenize(_T(","), pos), nullptr, 10);
+        r.bonusMs = _tcstoi64(line.Tokenize(_T(","), pos), nullptr, 10);
+        if (r.date > 0) m_records.push_back(r);
+    }
+    return true;
 }
 
 void CHistoryDlg::DoDataExchange(CDataExchange* pDX) {
     CDialog::DoDataExchange(pDX);
     DDX_Control(pDX, IDC_HISTORY_LIST, m_list);
+    DDX_Control(pDX, IDC_HISTORY_USER, m_userCombo);
 }
 
 BOOL CHistoryDlg::OnInitDialog() {
     CDialog::OnInitDialog();
     ApplyAppIcon(this);
+
+    m_chart.SubclassDlgItem(IDC_HISTORY_CHART, this);
+    m_list.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    m_list.InsertColumn(0, _T("날짜"), LVCFMT_LEFT, ScaleForDpi(170));
+    m_list.InsertColumn(1, _T("사용 시간"), LVCFMT_RIGHT, ScaleForDpi(120));
+    m_list.InsertColumn(2, _T("연장"), LVCFMT_RIGHT, ScaleForDpi(90));
+
+    // 자녀 계정이 둘 이상일 때만 계정 선택 표시
+    for (const CString& c : m_children) {
+        const int idx = m_userCombo.AddString(c);
+        if (c.CompareNoCase(m_user) == 0) m_userCombo.SetCurSel(idx);
+    }
+    m_userCombo.ShowWindow(m_children.size() > 1 ? SW_SHOW : SW_HIDE);
+
+    Populate();
+    SetForegroundWindow();
+    return TRUE;
+}
+
+void CHistoryDlg::OnUserChanged() {
+    const int sel = m_userCombo.GetCurSel();
+    if (sel < 0) return;
+    CString user;
+    m_userCombo.GetLBText(sel, user);
+    if (!Load(user)) {
+        ShowMessage(this, _T("ChildrenBlock 서비스에 연결할 수 없습니다."), MB_ICONERROR);
+        return;
+    }
+    Populate();
+}
+
+void CHistoryDlg::Populate() {
+    SetDlgItemText(IDC_HISTORY_TITLE, m_user.IsEmpty() ? CString(_T("최근 14일")) : _T("최근 14일 · ") + m_user);
 
     std::map<int, UsageRecord> byDate;
     for (const UsageRecord& r : m_records) byDate[r.date] = r;
@@ -188,7 +244,6 @@ BOOL CHistoryDlg::OnInitDialog() {
         d.today = i == 0;
         days.push_back(d);
     }
-    m_chart.SubclassDlgItem(IDC_HISTORY_CHART, this);
     m_chart.SetData(days, m_limitMs);
 
     // 요약
@@ -204,11 +259,7 @@ BOOL CHistoryDlg::OnInitDialog() {
     SetDlgItemText(IDC_HISTORY_SUMMARY, summary);
 
     // 목록: 최근 날짜부터
-    m_list.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
-    m_list.InsertColumn(0, _T("날짜"), LVCFMT_LEFT, ScaleForDpi(170));
-    m_list.InsertColumn(1, _T("사용 시간"), LVCFMT_RIGHT, ScaleForDpi(120));
-    m_list.InsertColumn(2, _T("연장"), LVCFMT_RIGHT, ScaleForDpi(90));
-
+    m_list.DeleteAllItems();
     int row = 0;
     for (auto it = byDate.rbegin(); it != byDate.rend(); ++it, ++row) {
         const UsageRecord& r = it->second;
@@ -217,7 +268,4 @@ BOOL CHistoryDlg::OnInitDialog() {
         m_list.SetItemText(row, 2, r.bonusMs > 0 ? FormatHoursMinutesLong(r.bonusMs) : CString(_T("-")));
     }
     m_list.SetColumnWidth(2, LVSCW_AUTOSIZE_USEHEADER);  // 마지막 열을 남은 폭까지 늘림
-
-    SetForegroundWindow();
-    return TRUE;
 }

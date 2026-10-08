@@ -2,6 +2,7 @@
 #include "PasswordDlg.h"
 
 #include "Common.h"
+#include "UiUtil.h"
 #include "PasswordHasher.h"
 
 // ---------------------------------------------------------------------------

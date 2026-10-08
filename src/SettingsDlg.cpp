@@ -2,6 +2,7 @@
 #include "SettingsDlg.h"
 
 #include "Common.h"
+#include "UiUtil.h"
 #include "HistoryDlg.h"
 #include "Settings.h"
 
@@ -45,7 +46,10 @@ BOOL CSettingsDlg::OnInitDialog() {
     SetDlgItemInt(IDC_SHUT_WARN_MIN, m_cfg.shutdownWarnSeconds / 60, FALSE);
     CheckDlgButton(IDC_COUNT_BREAK, m_cfg.countBreakAsUsage ? BST_CHECKED : BST_UNCHECKED);
 
-    SetDlgItemText(IDC_USED_TODAY, _T("오늘 사용한 시간: ") + FormatDuration(m_usedTodayMs));
+    if (m_usedTodayMs >= 0)
+        SetDlgItemText(IDC_USED_TODAY, _T("오늘 사용한 시간: ") + FormatDuration(m_usedTodayMs));
+    else
+        GetDlgItem(IDC_USED_TODAY)->ShowWindow(SW_HIDE);  // 부모 계정에서 연 경우
 
     UpdateControls();
     SetForegroundWindow();
@@ -54,7 +58,7 @@ BOOL CSettingsDlg::OnInitDialog() {
 
 void CSettingsDlg::OnToggle() { UpdateControls(); }
 
-void CSettingsDlg::OnShowHistory() { CHistoryDlg::Show(m_cfg, nullptr, this); }
+void CSettingsDlg::OnShowHistory() { CHistoryDlg::Show(this); }
 
 void CSettingsDlg::UpdateControls() {
     const BOOL breaks = IsDlgButtonChecked(IDC_BREAK_ENABLE) == BST_CHECKED;

@@ -2,6 +2,7 @@
 #include "BreakOverlayWnd.h"
 
 #include "Common.h"
+#include "UiUtil.h"
 #include "resource.h"
 
 namespace {

@@ -8,7 +8,13 @@
 namespace {
 
 CString SettingsPath() { return GetDataDir() + _T("\\settings.ini"); }
-CString StatePath() { return GetDataDir() + _T("\\state.ini"); }
+
+CString StatePath(const CString& user) {
+    CString name = user;
+    name.MakeLower();
+    for (LPCTSTR bad = _T("\\/:*?\"<>|"); *bad; ++bad) name.Replace(*bad, _T('_'));
+    return GetDataDir() + _T("\\state-") + name + _T(".ini");
+}
 
 int ReadInt(LPCTSTR section, LPCTSTR key, int def, const CString& path) {
     return static_cast<int>(GetPrivateProfileInt(section, key, def, path));
@@ -21,7 +27,7 @@ int64_t ReadInt64(LPCTSTR section, LPCTSTR key, const CString& path) {
 }
 
 CString ReadString(LPCTSTR section, LPCTSTR key, const CString& path) {
-    TCHAR buf[256] = {};
+    TCHAR buf[1024] = {};
     GetPrivateProfileString(section, key, _T(""), buf, _countof(buf), path);
     return buf;
 }
@@ -34,19 +40,29 @@ bool WriteInt64(LPCTSTR section, LPCTSTR key, int64_t value, const CString& path
 
 int Clamp(int v, int lo, int hi) { return (std::min)((std::max)(v, lo), hi); }
 
+}  // namespace
+
+bool AppSettings::IsChild(const CString& user) const {
+    if (user.IsEmpty()) return false;
+    // 설정에 "도메인\이름" 으로 적어도 세션 사용자 이름(도메인 없음)과 비교한다.
+    return std::any_of(childUsers.begin(), childUsers.end(), [&user](const CString& c) {
+        const int slash = c.ReverseFind(_T('\\'));
+        return (slash >= 0 ? c.Mid(slash + 1) : c).CompareNoCase(user) == 0;
+    });
+}
+
+namespace SettingsStore {
+
 void Sanitize(cb::ScheduleConfig& c) {
     using namespace Limits;
     c.useMinutes = Clamp(c.useMinutes, kUseMinMin, kUseMinMax);
     c.breakMinutes = Clamp(c.breakMinutes, kBreakMinMin, kBreakMinMax);
     c.breakWarnSeconds = Clamp(c.breakWarnSeconds, kBreakWarnSecMin, kBreakWarnSecMax);
+    if (c.breakWarnSeconds >= c.useMinutes * 60) c.breakWarnSeconds = 60;
     c.dailyLimitMinutes = Clamp(c.dailyLimitMinutes, kDailyLimitMinMin, kDailyLimitMinMax);
     c.shutdownAtMinuteOfDay = Clamp(c.shutdownAtMinuteOfDay, 0, 24 * 60 - 1);
     c.shutdownWarnSeconds = Clamp(c.shutdownWarnSeconds, kShutWarnMinMin * 60, kShutWarnMinMax * 60);
 }
-
-}  // namespace
-
-namespace SettingsStore {
 
 void Load(AppSettings& s) {
     const CString path = SettingsPath();
@@ -64,6 +80,14 @@ void Load(AppSettings& s) {
     c.shutdownWarnSeconds = ReadInt(_T("Schedule"), _T("ShutdownWarnSeconds"), def.shutdownWarnSeconds, path);
     c.countBreakAsUsage = ReadInt(_T("Schedule"), _T("CountBreakAsUsage"), def.countBreakAsUsage, path) != 0;
     Sanitize(c);
+
+    s.childUsers.clear();
+    const CString users = ReadString(_T("Children"), _T("Users"), path);
+    int pos = 0;
+    for (CString token = users.Tokenize(_T(","), pos); pos >= 0; token = users.Tokenize(_T(","), pos)) {
+        token.Trim();
+        if (!token.IsEmpty()) s.childUsers.push_back(token);
+    }
 
     s.passwordSalt = ReadString(_T("Security"), _T("Salt"), path);
     s.passwordHash = ReadString(_T("Security"), _T("Hash"), path);
@@ -85,6 +109,10 @@ bool Save(const AppSettings& s) {
     ok &= WriteInt64(_T("Schedule"), _T("ShutdownWarnSeconds"), c.shutdownWarnSeconds, path);
     ok &= WriteInt64(_T("Schedule"), _T("CountBreakAsUsage"), c.countBreakAsUsage ? 1 : 0, path);
 
+    CString users;
+    for (const CString& u : s.childUsers) users += (users.IsEmpty() ? _T("") : _T(",")) + u;
+    ok &= WritePrivateProfileString(_T("Children"), _T("Users"), users, path) != FALSE;
+
     ok &= WritePrivateProfileString(_T("Security"), _T("Salt"), s.passwordSalt, path) != FALSE;
     ok &= WritePrivateProfileString(_T("Security"), _T("Hash"), s.passwordHash, path) != FALSE;
     ok &= WriteInt64(_T("Security"), _T("Iterations"), s.passwordIterations, path);
@@ -97,10 +125,11 @@ ULONGLONG SettingsFileStamp() {
     return (static_cast<ULONGLONG>(info.ftLastWriteTime.dwHighDateTime) << 32) | info.ftLastWriteTime.dwLowDateTime;
 }
 
-bool LoadState(SavedState& st) {
-    const CString path = StatePath();
+bool LoadState(const CString& user, SavedState& st) {
+    const CString path = StatePath(user);
     if (GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES) return false;
     st.date = ReadInt(_T("State"), _T("Date"), 0, path);
+    st.pausedDate = ReadInt(_T("State"), _T("PausedDate"), 0, path);
     st.engine.usedTodayMs = ReadInt64(_T("State"), _T("UsedTodayMs"), path);
     st.engine.cycleUsedMs = ReadInt64(_T("State"), _T("CycleUsedMs"), path);
     st.engine.breakRemainingMs = ReadInt64(_T("State"), _T("BreakRemainingMs"), path);
@@ -108,10 +137,11 @@ bool LoadState(SavedState& st) {
     return true;
 }
 
-bool SaveState(const SavedState& st) {
-    const CString path = StatePath();
+bool SaveState(const CString& user, const SavedState& st) {
+    const CString path = StatePath(user);
     bool ok = true;
     ok &= WriteInt64(_T("State"), _T("Date"), st.date, path);
+    ok &= WriteInt64(_T("State"), _T("PausedDate"), st.pausedDate, path);
     ok &= WriteInt64(_T("State"), _T("UsedTodayMs"), st.engine.usedTodayMs, path);
     ok &= WriteInt64(_T("State"), _T("CycleUsedMs"), st.engine.cycleUsedMs, path);
     ok &= WriteInt64(_T("State"), _T("BreakRemainingMs"), st.engine.breakRemainingMs, path);
@@ -126,8 +156,8 @@ bool SaveState(const SavedState& st) {
     return ok;
 }
 
-std::vector<UsageRecord> LoadHistory() {
-    const CString path = StatePath();
+std::vector<UsageRecord> LoadHistory(const CString& user) {
+    const CString path = StatePath(user);
     std::vector<TCHAR> buf(16 * 1024);
     for (;;) {
         const DWORD n = GetPrivateProfileSection(_T("History"), buf.data(), static_cast<DWORD>(buf.size()), path);
@@ -154,10 +184,10 @@ std::vector<UsageRecord> LoadHistory() {
     return records;
 }
 
-void PruneHistory(size_t keepDays) {
-    const std::vector<UsageRecord> records = LoadHistory();
+void PruneHistory(const CString& user, size_t keepDays) {
+    const std::vector<UsageRecord> records = LoadHistory(user);
     if (records.size() <= keepDays) return;
-    const CString path = StatePath();
+    const CString path = StatePath(user);
     for (size_t i = 0; i < records.size() - keepDays; ++i) {
         CString key;
         key.Format(_T("%d"), records[i].date);

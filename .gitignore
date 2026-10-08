@@ -1,3 +1,21 @@
-/bin/x64/Debug/*
-/bin/x64/Release/*
-/obj/*
+# 빌드 결과
+bin/
+obj/
+x64/
+Debug/
+Release/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+ipch/
+
+# 기타
+*.log

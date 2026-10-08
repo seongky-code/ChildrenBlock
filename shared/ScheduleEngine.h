@@ -60,6 +60,10 @@ public:
     void Extend(int64_t ms);
     void ResetDay();
 
+    // 부모가 "오늘 제한 해제" 한 상태. 사용 시간은 계속 기록하지만 휴식·종료는 하지 않는다.
+    void SetSuspended(bool suspended);
+    bool IsSuspended() const { return suspended_; }
+
     Phase GetPhase() const { return phase_; }
     Status GetStatus() const;
 
@@ -70,6 +74,7 @@ private:
     ScheduleConfig cfg_;
     PersistentState st_;
     Phase phase_ = Phase::Using;
+    bool suspended_ = false;
     int64_t shutdownCountdownMs_ = 0;
     int64_t lastMsToShutdown_ = -1;
 };

@@ -18,7 +18,10 @@
 #include <shlobj.h>
 #include <bcrypt.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "bcrypt.lib")

@@ -47,6 +47,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)..\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -88,34 +89,33 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="ScheduleEngine.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="BreakOverlayWnd.cpp" />
     <ClCompile Include="ChildrenBlock.cpp" />
-    <ClCompile Include="Common.cpp" />
     <ClCompile Include="HistoryDlg.cpp" />
     <ClCompile Include="PasswordDlg.cpp" />
-    <ClCompile Include="PasswordHasher.cpp" />
-    <ClCompile Include="Settings.cpp" />
     <ClCompile Include="SettingsDlg.cpp" />
     <ClCompile Include="TrayWnd.cpp" />
+    <ClCompile Include="UiUtil.cpp" />
     <ClCompile Include="WarningWnd.cpp" />
+    <ClCompile Include="..\shared\Common.cpp" />
+    <ClCompile Include="..\shared\Protocol.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BreakOverlayWnd.h" />
     <ClInclude Include="ChildrenBlock.h" />
-    <ClInclude Include="Common.h" />
     <ClInclude Include="HistoryDlg.h" />
     <ClInclude Include="PasswordDlg.h" />
-    <ClInclude Include="PasswordHasher.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="ScheduleEngine.h" />
-    <ClInclude Include="Settings.h" />
     <ClInclude Include="SettingsDlg.h" />
     <ClInclude Include="TrayWnd.h" />
+    <ClInclude Include="UiUtil.h" />
     <ClInclude Include="WarningWnd.h" />
+    <ClInclude Include="..\shared\Common.h" />
+    <ClInclude Include="..\shared\Protocol.h" />
+    <ClInclude Include="..\shared\ScheduleEngine.h" />
+    <ClInclude Include="..\shared\Settings.h" />
+    <ClInclude Include="..\shared\PasswordHasher.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ChildrenBlock.rc" />

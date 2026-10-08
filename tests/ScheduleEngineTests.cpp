@@ -257,6 +257,28 @@ void TestDisableBreaksWhileInBreak() {
     CHECK(s.engine.GetStatus().msToBreak == -1);
 }
 
+void TestSuspendCountsUsageWithoutLimits() {
+    ScheduleConfig c = BreaksOnly();
+    c.dailyLimitEnabled = true;
+    c.dailyLimitMinutes = 60;
+    Sim s(c);
+    s.Run(31 * kMin);
+    CHECK(s.P() == Phase::Break);
+
+    s.engine.SetSuspended(true);
+    CHECK(s.P() == Phase::Using);
+    s.Run(120 * kMin);  // 한도를 넘어도 휴식·종료 없음
+    CHECK(s.P() == Phase::Using);
+    CHECK(s.engine.GetStatus().usedTodayMs == 150 * kMin);  // 30분 사용 + 1분 휴식(미포함) + 120분
+    CHECK(s.engine.GetStatus().msToBreak == -1);
+    CHECK(s.engine.GetStatus().msToShutdown == -1);
+
+    // 해제를 끄면 즉시 한도 초과 → 유예 후 종료
+    s.engine.SetSuspended(false);
+    s.engine.Advance(0, s.Sod());
+    CHECK(s.P() == Phase::ShutdownWarning);
+}
+
 }  // namespace
 
 int main() {
@@ -275,6 +297,7 @@ int main() {
         {"RestoreDuringBreak", TestRestoreDuringBreak},
         {"ResetDay", TestResetDay},
         {"DisableBreaksWhileInBreak", TestDisableBreaksWhileInBreak},
+        {"SuspendCountsUsageWithoutLimits", TestSuspendCountsUsageWithoutLimits},
     };
 
     for (const auto& c : cases) {

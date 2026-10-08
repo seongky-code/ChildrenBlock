@@ -35,8 +35,24 @@ void ScheduleEngine::Restore(const PersistentState& state, int64_t secondsOfDay)
     Evaluate(secondsOfDay);
 }
 
+void ScheduleEngine::SetSuspended(bool suspended) {
+    if (suspended_ == suspended) return;
+    suspended_ = suspended;
+    if (suspended_) {
+        st_.breakRemainingMs = 0;
+        st_.cycleUsedMs = 0;
+        phase_ = Phase::Using;
+        lastMsToShutdown_ = -1;
+    }
+}
+
 void ScheduleEngine::Advance(int64_t deltaMs, int64_t secondsOfDay) {
     if (deltaMs < 0) deltaMs = 0;
+
+    if (suspended_) {
+        st_.usedTodayMs += deltaMs;
+        return;
+    }
 
     switch (phase_) {
     case Phase::Shutdown:
@@ -86,6 +102,7 @@ Status ScheduleEngine::GetStatus() const {
     Status s;
     s.phase = phase_;
     s.usedTodayMs = st_.usedTodayMs;
+    if (suspended_) return s;  // 휴식·종료 없음
     if (cfg_.breaksEnabled && (phase_ == Phase::Using || phase_ == Phase::BreakWarning)) {
         s.msToBreak = std::max<int64_t>(0, cfg_.useMinutes * kMinuteMs - st_.cycleUsedMs);
     }
@@ -116,6 +133,11 @@ int64_t ScheduleEngine::ComputeMsToShutdown(int64_t secondsOfDay) const {
 }
 
 void ScheduleEngine::Evaluate(int64_t secondsOfDay) {
+    if (suspended_) {
+        phase_ = Phase::Using;
+        lastMsToShutdown_ = -1;
+        return;
+    }
     if (phase_ == Phase::Shutdown) return;
 
     const int64_t toShutdown = ComputeMsToShutdown(secondsOfDay);

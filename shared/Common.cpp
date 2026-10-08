@@ -1,18 +1,8 @@
 #include "pch.h"
 #include "Common.h"
 
-#include "resource.h"
-
 #include <cstdio>
-
-void ApplyAppIcon(CWnd* wnd) {
-    const HINSTANCE res = AfxGetResourceHandle();
-    auto load = [res](int cx, int cy) {
-        return static_cast<HICON>(LoadImage(res, MAKEINTRESOURCE(IDR_MAINFRAME), IMAGE_ICON, cx, cy, LR_SHARED));
-    };
-    wnd->SetIcon(load(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON)), TRUE);
-    wnd->SetIcon(load(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)), FALSE);
-}
+#include <mutex>
 
 CString FormatDuration(int64_t ms) {
     if (ms < 0) ms = 0;
@@ -47,28 +37,36 @@ CString FormatHoursMinutesLong(int64_t ms) {
 
 CString GetDataDir() {
     static CString dir;
-    if (!dir.IsEmpty()) return dir;
-
+    static std::once_flag once;
+    std::call_once(once, [] {
 #ifdef _DEBUG
-    // 개발 중에는 실제 ProgramData 를 건드리지 않도록 경로를 바꿀 수 있다 (Release 빌드에는 없음).
-    TCHAR overrideDir[MAX_PATH] = {};
-    if (GetEnvironmentVariable(_T("CHILDRENBLOCK_DATADIR"), overrideDir, MAX_PATH) > 0) {
-        dir = overrideDir;
-        CreateDirectory(dir, nullptr);
-        return dir;
-    }
+        // 개발 중에는 실제 ProgramData 를 건드리지 않도록 경로를 바꿀 수 있다 (Release 빌드에는 없음).
+        TCHAR overrideDir[MAX_PATH] = {};
+        if (GetEnvironmentVariable(_T("CHILDRENBLOCK_DATADIR"), overrideDir, MAX_PATH) > 0) {
+            dir = overrideDir;
+            CreateDirectory(dir, nullptr);
+            return;
+        }
 #endif
-
-    PWSTR programData = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &programData))) {
-        dir = programData;
-        CoTaskMemFree(programData);
-    } else {
-        dir = _T("C:\\ProgramData");
-    }
-    dir += _T("\\ChildrenBlock");
-    CreateDirectory(dir, nullptr);
+        PWSTR programData = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &programData))) {
+            dir = programData;
+            CoTaskMemFree(programData);
+        } else {
+            dir = _T("C:\\ProgramData");
+        }
+        dir += _T("\\ChildrenBlock");
+        CreateDirectory(dir, nullptr);
+    });
     return dir;
+}
+
+CString GetModuleDir() {
+    TCHAR path[MAX_PATH] = {};
+    GetModuleFileName(nullptr, path, MAX_PATH);
+    CString dir(path);
+    const int slash = dir.ReverseFind(_T('\\'));
+    return slash >= 0 ? dir.Left(slash) : dir;
 }
 
 void LogEvent(LPCTSTR format, ...) {
@@ -84,21 +82,16 @@ void LogEvent(LPCTSTR format, ...) {
     line.Format(_T("%04u-%02u-%02u %02u:%02u:%02u  %s\n"), st.wYear, st.wMonth, st.wDay, st.wHour,
                 st.wMinute, st.wSecond, message.GetString());
 
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
     FILE* file = nullptr;
     if (_wfopen_s(&file, GetDataDir() + _T("\\log.txt"), L"a, ccs=UTF-8") == 0 && file) {
         fputws(line, file);
         fclose(file);
     }
-    TRACE(_T("%s"), line.GetString());
+    OutputDebugString(line);
 }
 
-int ScaleForDpi(int value) {
-    static int dpi = 0;
-    if (dpi == 0) {
-        HDC hdc = ::GetDC(nullptr);
-        dpi = GetDeviceCaps(hdc, LOGPIXELSY);
-        ::ReleaseDC(nullptr, hdc);
-        if (dpi <= 0) dpi = 96;
-    }
-    return MulDiv(value, dpi, 96);
-}
+int TodayAsInt(const SYSTEMTIME& st) { return st.wYear * 10000 + st.wMonth * 100 + st.wDay; }
+
+int64_t SecondsOfDay(const SYSTEMTIME& st) { return st.wHour * 3600 + st.wMinute * 60 + st.wSecond; }

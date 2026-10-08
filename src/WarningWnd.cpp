@@ -2,6 +2,7 @@
 #include "WarningWnd.h"
 
 #include "Common.h"
+#include "UiUtil.h"
 
 #include <dwmapi.h>
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Settings.h"
 #include "TrayWnd.h"
 
 class CChildrenBlockApp : public CWinApp {
@@ -10,19 +9,18 @@ public:
 
 private:
     struct CommandLine {
-        AppOptions options;
-        bool resetPassword = false;
+        bool agent = false;  // 서비스가 실행한 트레이
         bool setup = false;
         bool history = false;
+        bool resetPassword = false;
     };
 
     static CommandLine ParseCommandLine();
-    bool EnsurePassword();
     void RunSetup();
     void ResetPassword();
 
-    AppSettings m_settings;
     HANDLE m_hMutex = nullptr;
+    int m_exitCode = 0;
 };
 
 extern CChildrenBlockApp theApp;
